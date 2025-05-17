@@ -5,9 +5,15 @@ Parameters:
   MetagraphAmiId:
     Type: AWS::EC2::Image::Id
     Description: AMI ID to use for Metagraph Batch instances
+  MetagraphArmAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID to use for Metagraph Batch instances on ARM (Graviton)
   NotificationEmail:
     Type: String
     Description: Email address to subscribe to the SNS topic
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: The security group for your VPC
 
 Resources:
 
@@ -59,6 +65,40 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
+        - PolicyName: AllowCloudTrailLookup
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudtrail:LookupEvents
+                Resource: "*"
+        - PolicyName: AllowCloudWatchLogging
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+        - PolicyName: AllowPricingGetProducts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - pricing:GetProducts
+                Resource: "*"
+        - PolicyName: LambdaDescribeEC2
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                Resource: "*"
         - PolicyName: LambdaSubmitBatchJobsPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -108,6 +148,7 @@ Resources:
                 Action:
                   - batch:SubmitJob
                   - batch:DescribeJobs
+                  - batch:TagResource
                 Resource: "*"
         - PolicyName: StepFunctionsInvokeLambda
           PolicyDocument:
@@ -118,6 +159,7 @@ Resources:
                 Resource:
                   - !GetAtt MetagraphTaskScheduler.Arn
                   - !GetAtt MetagraphNotifier.Arn
+                  - !GetAtt MetagraphCostEstimator.Arn
         - PolicyName: StepFunctionsEventBridgePermissions
           PolicyDocument:
             Version: "2012-10-17"
@@ -171,6 +213,49 @@ Resources:
       Protocol: email
       Endpoint: !Ref NotificationEmail
 
+  MetagraphArmLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Name: !Ref ECSInstanceProfile
+        ImageId: !Ref MetagraphArmAmiId
+        UserData:
+          Fn::Base64: !Sub |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+
+            --==BOUNDARY==
+            Content-Type: text/cloud-config; charset="us-ascii"
+
+            cloud_final_modules:
+              - [scripts-user, always]
+
+            write_files:
+              - path: /etc/ecs/ecs.config
+                content: |
+                  ECS_RESERVED_MEMORY=8192
+                  ECS_ENABLE_INSTANCE_METRICS=true
+
+            --==BOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            set -e
+            mkdir -p /mnt/data
+            mkdir -p /mnt/bucket
+
+            export UNSTABLE_MOUNTPOINT_MAX_PREFETCH_WINDOW_SIZE=536870912
+
+            mount-s3 --read-only metagraph /mnt/data
+            mount-s3 ${MetagraphBucket} /mnt/bucket
+
+            for pid in $(pidof mount-s3); do
+                echo -1000 > /proc/$pid/oom_score_adj
+            done
+
+            --==BOUNDARY==--
+
 ### Launch template for container service with s3 bucket mounting
   MetagraphLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -190,6 +275,12 @@ Resources:
             cloud_final_modules:
               - [scripts-user, always]
 
+            write_files:
+              - path: /etc/ecs/ecs.config
+                content: |
+                  ECS_RESERVED_MEMORY=8192
+                  ECS_ENABLE_INSTANCE_METRICS=true
+
             --==BOUNDARY==
             Content-Type: text/x-shellscript; charset="us-ascii"
 
@@ -199,11 +290,154 @@ Resources:
             mkdir -p /mnt/data
             mkdir -p /mnt/bucket
 
-            mount-s3 metagraph /mnt/data
+            export UNSTABLE_MOUNTPOINT_MAX_PREFETCH_WINDOW_SIZE=536870912
+
+            mount-s3 --read-only metagraph /mnt/data
             mount-s3 ${MetagraphBucket} /mnt/bucket
+
+            for pid in $(pidof mount-s3); do
+                echo -1000 > /proc/$pid/oom_score_adj
+            done
 
             --==BOUNDARY==--
 
+  AgentDisconnectHandlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SqsRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource: !GetAtt AgentDisconnectedQueue.Arn
+        - PolicyName: KillUnhealthyECSInstance
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeContainerInstances
+                  - ecs:UpdateContainerInstancesState
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - autoscaling:TerminateInstanceInAutoScalingGroup
+                Resource: "*"
+
+  AgentDisconnectedQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      DelaySeconds: 300      # 5-minute grace period
+      VisibilityTimeout: 120
+
+  AgentDisconnectHandler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt AgentDisconnectHandlerRole.Arn
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import boto3, json
+          ecs = boto3.client("ecs")
+          asg = boto3.client("autoscaling")
+
+          def handler(event, _):
+              detail = json.loads(event['Records'][0]['body'])['detail']
+              cluster = detail['clusterArn']
+              inst_arn = detail['containerInstanceArn']
+              ec2_id   = detail['ec2InstanceId']
+
+              # double-check after the delay
+              inst = ecs.describe_container_instances(
+                  cluster=cluster,
+                  containerInstances=[inst_arn]
+              )['containerInstances'][0]
+              if inst['agentConnected']:
+                  return                                      # agent recovered
+
+              ecs.update_container_instances_state(
+                  cluster=cluster,
+                  containerInstances=[inst_arn],
+                  status='DRAINING'
+              )
+
+              asg.terminate_instance_in_auto_scaling_group(
+                  InstanceId=ec2_id,
+                  ShouldDecrementDesiredCapacity=False       # replace it
+              )
+
+  AgentDisconnectRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source: ["aws.ecs"]
+        detail-type: ["ECS Container Instance State Change"]
+        detail:
+          agentConnected: [false]
+      Targets:
+        - Arn: !GetAtt AgentDisconnectedQueue.Arn
+          Id: QueueTarget
+
+  AgentDisconnectedQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref AgentDisconnectedQueue]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowEventBridgeSend
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt AgentDisconnectedQueue.Arn
+
+  QueueLambdaMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      EventSourceArn: !GetAtt AgentDisconnectedQueue.Arn
+      FunctionName: !Ref AgentDisconnectHandler
+
+  MetagraphLargeBatchComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: EC2
+        AllocationStrategy: BEST_FIT_PROGRESSIVE
+        MinvCpus: 0
+        MaxvCpus: 192
+        InstanceTypes:
+          - hpc7g.16xlarge  # 64 vCPU, 128 GiB, 25 Gbps network
+        Subnets:
+          - subnet-0a54e9b2712059ce5 # eu-west-1a
+          - subnet-010153849061cb13b # eu-west-1b
+          - subnet-051ff0b8516072df4 # eu-west-1c
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+        InstanceRole: !GetAtt ECSInstanceProfile.Arn
+        LaunchTemplate:
+          LaunchTemplateId: !Ref MetagraphArmLaunchTemplate
+          Version: !GetAtt MetagraphArmLaunchTemplate.LatestVersionNumber
 
   MetagraphBatchComputeEnvironment:
     Type: AWS::Batch::ComputeEnvironment
@@ -212,20 +446,32 @@ Resources:
       State: ENABLED
       ComputeResources:
         Type: EC2
+        AllocationStrategy: BEST_FIT_PROGRESSIVE
         MinvCpus: 0
-        MaxvCpus: 512
+        MaxvCpus: 64
         InstanceTypes:
-          - r6i.4xlarge # 16 vCPU, 128 GiB RAM
+          - r6in.2xlarge # 8 vCPU, 64 GiB memory, 40 Gbps network
+          - r6in.4xlarge # 16 vCPU, 128 GiB memory, 50 Gbps network
+          - r6in.8xlarge # 32 vCPU, 256 GiB memory, 50 Gbps network
         Subnets:
-          - subnet-064a41e7e9f7821a8 # eu-central-2a
-          - subnet-0247650ef94e8aa42 # eu-central-2b
-          - subnet-02ebd4969f85757c4 # eu-central-2c
+          - subnet-0a54e9b2712059ce5 # eu-west-1a
+          - subnet-010153849061cb13b # eu-west-1b
+          - subnet-051ff0b8516072df4 # eu-west-1c
         SecurityGroupIds:
-          - sg-08aa6d6a56d63b8cd
+          - !Ref SecurityGroupId
         InstanceRole: !GetAtt ECSInstanceProfile.Arn
         LaunchTemplate:
           LaunchTemplateId: !Ref MetagraphLaunchTemplate
           Version: !GetAtt MetagraphLaunchTemplate.LatestVersionNumber
+
+  MetagraphLargeBatchJobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      State: ENABLED
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref MetagraphLargeBatchComputeEnvironment
 
   MetagraphBatchJobQueue:
     Type: AWS::Batch::JobQueue
@@ -244,8 +490,11 @@ Resources:
         Attempts: 1
       ContainerProperties:
         Image: public.ecr.aws/amazonlinux/amazonlinux:2023
-        Vcpus: 4
-        Memory: 8192
+        ResourceRequirements:
+          - Type: VCPU
+            Value: 8
+          - Type: MEMORY
+            Value: 32768
         Volumes:
           - Name: metagraph-bucket
             Host:
@@ -317,7 +566,7 @@ Resources:
 
               print(f"Copying {merged_key} to the s3 bucket...")
               with open(merged_key, 'rb') as src, open(os.path.join(BUCKET_MOUNT, merged_key), 'wb') as dst:
-                dst.write(src.read())
+                  dst.write(src.read())
         Environment:
           - Name: PYTHONUNBUFFERED
             Value: "1"
@@ -331,8 +580,11 @@ Resources:
         Attempts: 1
       ContainerProperties:
         Image: public.ecr.aws/amazonlinux/amazonlinux:2023
-        Vcpus: 4
-        Memory: 32768
+        ResourceRequirements:
+          - Type: VCPU
+            Value: 4
+          - Type: MEMORY
+            Value: 32768
         Volumes:
           - Name: metagraph-data
             Host:
@@ -369,7 +621,9 @@ Resources:
             export PATH="/opt/metagraph/metagraph/build:$PATH"
             export LD_LIBRARY_PATH="/usr/local/lib64:/usr/lib64:$LD_LIBRARY_PATH"
 
-            metagraph query \
+            dnf install -y time
+            PROC=$(eval echo $PROC)
+            /usr/bin/time -v metagraph query $EXTRA_ARGS -p $PROC --batch-size $BATCH_SIZE \
               -i "/mnt/data/$DATASET/$GRAPH_FILE" \
               -a "/mnt/data/$DATASET/$ANNO_FILE" \
               --query-mode "$QUERY_MODE" \
@@ -378,8 +632,14 @@ Resources:
               --min-kmers-fraction-graph "$MIN_KMERS_FRACTION_GRAPH" \
               "/mnt/bucket/$QUERY" > result.txt
 
+
+            echo "Sorting result.txt by index..."
+            sort -t $'\t' -k1,1n result.txt -o result.txt
+
+            echo "Copying result.txt to /mnt/bucket/$JOB_ID/$AWS_BATCH_JOB_ID.txt..."
             mkdir -p "/mnt/bucket/$JOB_ID"
             cp result.txt "/mnt/bucket/$JOB_ID/$AWS_BATCH_JOB_ID.txt"
+            echo "Copy completed successfully."
         JobRoleArn: !GetAtt MetagraphBatchJobRole.Arn
 
   MetagraphTaskScheduler:
@@ -397,16 +657,17 @@ Resources:
 
           s3 = boto3.client('s3')
 
-          def list_indices(bucket, prefix):
+          def list_indices(bucket, prefix, graph_suffix, anno_suffix):
               prefix = prefix.strip('/').rstrip('/')
               prefix += '/' if prefix else ''
               directories = defaultdict(dict)
               paginator = s3.get_paginator("list_objects_v2")
+
               for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
                   for element in page.get("Contents", []):
                       key = element['Key']
-                      is_graph = key.endswith('.dbg')
-                      is_anno = key.endswith('.annodbg')
+                      is_graph = key.endswith(graph_suffix)
+                      is_anno = key.endswith(anno_suffix)
                       if is_graph or is_anno:
                           splt = key.split('/')
                           directories['/'.join(splt[:-1])[len(prefix):]]['graph' if is_graph else 'anno'] = splt[-1]
@@ -419,7 +680,9 @@ Resources:
               prefix = event["query"]["index_prefix"].rstrip('/')
               bucket = 'metagraph'
 
-              all_directories = list_indices(bucket, prefix)
+              graph_suffix = event["query"].get("graph_suffix", "small.dbg")
+              anno_suffix = event["query"].get("anno_suffix", "brwt.annodbg")
+              all_directories = list_indices(bucket, prefix, graph_suffix, anno_suffix)
               regex_pattern = event["query"].get("index_filter", ".*")
               matching_dirs = [
                   (path, files)
@@ -427,37 +690,55 @@ Resources:
                   if re.match(regex_pattern, path)
               ]
 
-              job_id = event["arn"].split(":")[-1] if "arn" in event else context.aws_request_id
-              query_mode = event["query"].get("query_mode", "labels")
+              job_id = event["query"].get("job_id", event["arn"].split(":")[-1] if "arn" in event else context.aws_request_id)
 
               print(f"Found {len(all_directories)} directories, {len(matching_dirs)} matched '{regex_pattern}'")
 
               query_mode = event["query"].get("query_mode", "labels")
               query_filename = event["query"]["query_filename"]
               query_path = f"queries/{query_filename}"
+
+              query_size = file_size("${MetagraphBucket}", query_path)
+              is_large_query = event["query"].get("large_query", query_size >= 10 * 2**20)
+
+              print(f"Query file is {query_size / 2**20:.2f} MiB")
+
               num_top_labels = str(event["query"].get("num_top_labels", "inf"))
               min_kmers_fraction_label = str(event["query"].get("min_kmers_fraction_label", 0.7))
               min_kmers_fraction_graph = str(event["query"].get("min_kmers_fraction_graph", 0.0))
 
               tasks = []
+              overhead_gib = defaultdict(lambda: 5)
+              overhead_gib['plasmodium_falciparum'] = 10
+              overhead_gib['SARS_Cov2'] = 15
               for relative_path, files in matching_dirs:
                   if "graph" not in files or "anno" not in files:
-                      print(f"Skipping {relative_path}, missing required files: {list(files.keys())}")
+                      print(f"Skipping {relative_path}, missing required files, found: {list(files.keys())}")
                       continue
 
                   graph_file = files["graph"]
                   anno_file = files["anno"]
-                  graph_size = file_size(bucket, f"{prefix}/{relative_path}/{graph_file}")
-                  anno_size = file_size(bucket, f"{prefix}/{relative_path}/{anno_file}")
-                  memory_mib = (graph_size + anno_size) // 2**20 + 8*1024
+                  path = prefix + (relative_path and f"/{relative_path}")
+                  graph_size = file_size(bucket, f"{path}/{graph_file}")
+                  anno_size = file_size(bucket, f"{path}/{anno_file}")
+                  dataset_mib = (graph_size + anno_size) // 2**20
+
+                  is_large_graph = dataset_mib >= 115*1024
+                  job_queue = "${MetagraphLargeBatchJobQueue}" if is_large_query and not is_large_graph else "${MetagraphBatchJobQueue}"
 
                   task_name = relative_path.replace("/", "_")
                   tasks.append({
+                      "job_queue": job_queue,
                       "jobName": f"Query-{job_id}-{task_name}"[:128],
-                      "dataset": f"{prefix}/{relative_path}",
+                      "dataset": path,
                       "graph_file": graph_file,
                       "anno_file": anno_file,
-                      "memory_mib": memory_mib,
+                      "retry_attempt": 0,
+                      "proc": event["query"].get("proc", "$(nproc)"),
+                      "extra_args": event["query"].get("extra_args", ""),
+                      "batch_size": str(event["query"].get("batch_size", 200000)),
+                      "dataset_mib": dataset_mib,
+                      "overhead_mib": 1024*overhead_gib[f'metagraph/{path}'.split("/")[-2]],
                       "job_id": job_id,
                       "query_mode": query_mode,
                       "query": query_path,
@@ -468,9 +749,128 @@ Resources:
 
               return {
                   "job_id": job_id,
+                  "start_time": event["start_time"],
                   "query_mode": query_mode,
                   "num_top_labels": num_top_labels,
-                  "tasks": tasks
+                  "tasks": tasks,
+                  "merge": event["query"].get("merge", False)
+              }
+
+  MetagraphCostEstimator:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt MetagraphLambdaRole.Arn
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Timeout: 60
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import json
+          import re
+          from datetime import datetime, timezone
+          from dateutil import parser
+
+          cloudtrail = boto3.client("cloudtrail")
+          pricing = boto3.client("pricing", region_name="us-east-1")
+
+          def get_price_per_hour(instance_type):
+              try:
+                  response = pricing.get_products(
+                      ServiceCode="AmazonEC2",
+                      Filters=[
+                          {"Type": "TERM_MATCH", "Field": "instanceType", "Value": instance_type},
+                          {"Type": "TERM_MATCH", "Field": "location", "Value": "EU (Ireland)"},
+                          {"Type": "TERM_MATCH", "Field": "operatingSystem", "Value": "Linux"},
+                          {"Type": "TERM_MATCH", "Field": "tenancy", "Value": "Shared"},
+                          {"Type": "TERM_MATCH", "Field": "preInstalledSw", "Value": "NA"},
+                          {"Type": "TERM_MATCH", "Field": "usagetype", "Value": f"EU-BoxUsage:{instance_type}"}
+                      ],
+                      MaxResults=1
+                  )
+                  if not response['PriceList']:
+                      return None
+                  product = json.loads(response['PriceList'][0])
+                  terms = product['terms']['OnDemand']
+                  price_dimensions = next(iter(next(iter(terms.values()))['priceDimensions'].values()))
+                  return float(price_dimensions['pricePerUnit']['USD'])
+              except Exception as e:
+                  print(f"Price fetch failed for {instance_type}: {e}")
+                  return None
+
+          def lambda_handler(event, context):
+              start_time = parser.isoparse(event["start_time"])
+              cutoff_time = datetime.now(timezone.utc)
+              if "cutoff_time" in event:
+                  cutoff_time = parser.isoparse(event["cutoff_time"])
+
+              instance_lifetimes = {}  # instance_id -> {"launch_time": ..., "terminate_time": ..., "instance_type": ...}
+
+              # Collect RunInstances and TerminateInstances events
+              for event_name in ["RunInstances", "TerminateInstances"]:
+                  paginator = cloudtrail.get_paginator("lookup_events")
+                  for page in paginator.paginate(
+                      LookupAttributes=[{"AttributeKey": "EventName", "AttributeValue": event_name}],
+                      StartTime=start_time,
+                      EndTime=cutoff_time
+                  ):
+                      for evt in page["Events"]:
+                          event_time = evt["EventTime"]
+                          try:
+                              event_data = json.loads(evt["CloudTrailEvent"])
+                              if event_data.get("errorCode") is not None:
+                                  continue
+
+                              for item in event_data["responseElements"]["instancesSet"]["items"]:
+                                  instance_id = item["instanceId"]
+                                  if event_name == "RunInstances":
+                                      instance_type = item.get("instanceType") or event_data.get("requestParameters", {}).get("instanceType")
+                                      instance_lifetimes.setdefault(instance_id, {})["launch_time"] = event_time
+                                      instance_lifetimes[instance_id]["instance_type"] = instance_type
+                                  elif event_name == "TerminateInstances":
+                                      instance_lifetimes.setdefault(instance_id, {})["terminate_time"] = event_time
+                          except Exception as e:
+                              print(f"Failed to parse event: {e}")
+                              print(evt)
+                              continue
+
+              total_cost = 0.0
+              counted_instances = 0
+              instance_details = []
+
+              for instance_id, data in instance_lifetimes.items():
+                  launch_time = data.get("launch_time")
+                  if not launch_time or launch_time < start_time or launch_time > cutoff_time:
+                      continue
+
+                  terminate_time = data.get("terminate_time", cutoff_time)
+                  runtime_hours = (terminate_time - launch_time).total_seconds() / 3600
+                  instance_type = data.get("instance_type")
+                  if not instance_type:
+                      print(f"No instance_type for {instance_id}, skipping")
+                      continue
+
+                  price = get_price_per_hour(instance_type)
+                  if price is None:
+                      print(f"No price found for {instance_type}, skipping")
+                      continue
+
+                  instance_cost = price * runtime_hours
+                  total_cost += instance_cost
+                  counted_instances += 1
+
+                  instance_details.append({
+                      "instance_id": instance_id,
+                      "instance_type": instance_type,
+                      "price_per_hour": round(price, 4),
+                      "runtime_hours": round(runtime_hours, 4),
+                      "total_cost": round(instance_cost, 4)
+                  })
+
+              return {
+                  "total_cost_usd": round(total_cost, 4),
+                  "instance_count": counted_instances,
+                  "per_instance_breakdown": instance_details
               }
 
   MetagraphNotifier:
@@ -487,16 +887,24 @@ Resources:
           from urllib.parse import urlparse
 
           sns = boto3.client("sns")
-          s3 = boto3.client("s3", region_name='eu-central-2', endpoint_url='https://s3.eu-central-2.amazonaws.com')
+          s3 = boto3.client("s3", region_name='eu-west-1', endpoint_url='https://s3.eu-west-1.amazonaws.com')
 
           def lambda_handler(event, context):
               tasks = event["tasks"]
-
               fails = sum(task["status"] == "FAILED" for task in tasks)
               total = len(tasks)
 
               job_id = event["job_id"]
               mode = event["query_mode"]
+
+              # Extract cost from wrapped Payload
+              cost_info = event.get("estimated_cost", {}).get("Payload", {})
+              cost_usd = cost_info.get("total_cost_usd")
+              instance_count = cost_info.get("instance_count")
+
+              cost_text = ""
+              if cost_usd is not None:
+                  cost_text = f"\n\nEstimated cost: {cost_usd:.2f} USD across {instance_count} instance(s)"
 
               presigned_url = s3.generate_presigned_url(
                   ClientMethod='get_object',
@@ -510,7 +918,7 @@ Resources:
                   Message=(
                       f"Your Metagraph query {job_id} has completed.\n\n"
                       f"Query mode: {mode}\n"
-                      f"Failed tasks: {fails} out of {total}\n\n"
+                      f"Failed tasks: {fails} out of {total}{cost_text}\n\n"
                       f"Download your results here (valid for 7 days):\n\n{presigned_url}"
                   ),
                   Subject="Your Metagraph query has completed"
@@ -532,7 +940,8 @@ Resources:
                 "FunctionName": "${MetagraphTaskScheduler.Arn}",
                 "Payload": {
                   "arn.$": "$$.Execution.Id",
-                  "query.$": "$"
+                  "query.$": "$",
+                  "start_time.$": "$$.State.EnteredTime"
                 }
               },
               "Next": "RunQueries"
@@ -540,7 +949,7 @@ Resources:
             "RunQueries": {
               "Type": "Map",
               "ItemsPath": "$.tasks",
-              "MaxConcurrency": 150,
+              "MaxConcurrency": 200,
               "ItemBatcher": {
                 "MaxItemsPerBatch": 1
               },
@@ -556,14 +965,20 @@ Resources:
                     "Resource": "arn:aws:states:::batch:submitJob.sync",
                     "Parameters": {
                       "JobName.$": "$.Items[0].jobName",
-                      "JobQueue": "${MetagraphBatchJobQueue}",
+                      "JobQueue.$": "$.Items[0].job_queue",
                       "JobDefinition": "${MetagraphBatchJobDefinition}",
                       "ContainerOverrides": {
-                        "Memory.$": "$.Items[0].memory_mib",
+                        "ResourceRequirements": [
+                          {"Type": "VCPU", "Value": "1"},
+                          {"Type": "MEMORY", "Value.$": "States.Format('{}', States.MathAdd($.Items[0].dataset_mib, $.Items[0].overhead_mib))"}
+                        ],
                         "Environment": [
                           { "Name": "DATASET", "Value.$": "$.Items[0].dataset" },
                           { "Name": "GRAPH_FILE", "Value.$": "$.Items[0].graph_file" },
                           { "Name": "ANNO_FILE", "Value.$": "$.Items[0].anno_file" },
+                          { "Name": "BATCH_SIZE", "Value.$": "$.Items[0].batch_size" },
+                          { "Name": "EXTRA_ARGS", "Value.$": "$.Items[0].extra_args" },
+                          { "Name": "PROC", "Value.$": "$.Items[0].proc" },
                           { "Name": "QUERY", "Value.$": "$.Items[0].query" },
                           { "Name": "JOB_ID", "Value.$": "$.Items[0].job_id" },
                           { "Name": "QUERY_MODE", "Value.$": "$.Items[0].query_mode" },
@@ -572,23 +987,58 @@ Resources:
                           { "Name": "MIN_KMERS_FRACTION_GRAPH", "Value.$": "$.Items[0].min_kmers_fraction_graph" },
                           { "Name": "MANAGED_BY_AWS", "Value": "STARTED_BY_STEP_FUNCTIONS" }
                         ]
+                      },
+                      "Tags": {
+                        "Name.$": "$.Items[0].job_id"
                       }
                     },
-                    "Retry": [
-                      {
-                        "ErrorEquals": ["Batch.TooManyRequestsException", "States.TaskFailed"],
-                        "IntervalSeconds": 2,
-                        "BackoffRate": 2.0,
-                        "MaxAttempts": 3
-                      }
-                    ],
                     "Catch": [
                       {
                         "ErrorEquals": ["States.ALL"],
-                        "Next": "MarkFailed"
+                        "ResultPath": "$.error",
+                        "Next": "IncrementRetry"
                       }
                     ],
                     "Next": "MarkSucceeded"
+                  },
+                  "IncrementRetry": {
+                    "Type": "Pass",
+                    "ResultPath": "$",
+                    "Parameters": {
+                      "Items": [
+                        {
+                          "job_queue.$": "$.Items[0].job_queue",
+                          "jobName.$": "$.Items[0].jobName",
+                          "dataset.$": "$.Items[0].dataset",
+                          "graph_file.$": "$.Items[0].graph_file",
+                          "batch_size.$": "$.Items[0].batch_size",
+                          "extra_args.$": "$.Items[0].extra_args",
+                          "proc.$": "$.Items[0].proc",
+                          "anno_file.$": "$.Items[0].anno_file",
+                          "retry_attempt.$": "States.MathAdd($.Items[0].retry_attempt, 1)",
+                          "dataset_mib.$": "$.Items[0].dataset_mib",
+                          "overhead_mib.$": "States.MathAdd($.Items[0].overhead_mib, $.Items[0].overhead_mib)",
+                          "job_id.$": "$.Items[0].job_id",
+                          "query_mode.$": "$.Items[0].query_mode",
+                          "query.$": "$.Items[0].query",
+                          "num_top_labels.$": "$.Items[0].num_top_labels",
+                          "min_kmers_fraction_label.$": "$.Items[0].min_kmers_fraction_label",
+                          "min_kmers_fraction_graph.$": "$.Items[0].min_kmers_fraction_graph"
+                        }
+                      ]
+                    },
+                    "Next": "CheckRetryLimit"
+                  },
+                  "CheckRetryLimit": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "Variable": "$.Items[0].retry_attempt",
+                        "NumericLessThan": 3,
+                        "Next": "SubmitQuery"
+                      }
+                    ],
+                    "Default": "MarkFailed"
                   },
                   "MarkSucceeded": {
                     "Type": "Pass",
@@ -603,7 +1053,7 @@ Resources:
                     "Type": "Pass",
                     "ResultPath": "$",
                     "Parameters": {
-                      "jobName.$": "$.JobName",
+                      "jobName.$": "$.Items[0].jobName",
                       "status": "FAILED"
                     },
                     "End": true
@@ -611,7 +1061,18 @@ Resources:
                 }
               },
               "ResultPath": "$.tasks",
-              "Next": "GatherResults"
+              "Next": "ShouldMerge"
+            },
+            "ShouldMerge": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.merge",
+                  "BooleanEquals": true,
+                  "Next": "GatherResults"
+                }
+              ],
+              "Default": "EstimateCost"
             },
             "GatherResults": {
               "Type": "Task",
@@ -630,6 +1091,19 @@ Resources:
                 }
               },
               "ResultPath": null,
+              "Next": "EstimateCost"
+            },
+            "EstimateCost": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "ResultPath": "$.estimated_cost",
+              "Parameters": {
+                "FunctionName": "${MetagraphCostEstimator.Arn}",
+                "Payload": {
+                  "job_id.$": "$.job_id",
+                  "start_time.$": "$.start_time"
+                }
+              },
               "Next": "NotifyUser"
             },
             "NotifyUser": {
@@ -638,6 +1112,80 @@ Resources:
               "Parameters": {
                 "FunctionName": "${MetagraphNotifier.Arn}",
                 "Payload.$": "$"
+              },
+              "End": true
+            }
+          }
+        }
+
+  MetagraphBatchRunner:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      RoleArn: !GetAtt MetagraphStepFunctionsRole.Arn
+      DefinitionString: !Sub |
+        {
+          "StartAt": "InitializeQueryList",
+          "States": {
+            "InitializeQueryList": {
+              "Type": "Pass",
+              "Result": {
+                "queries": [
+                  "1",
+                  "10",
+                  "20",
+                  "50",
+                  "100",
+                  "500",
+                  "2k5",
+                  "5k"
+                ]
+              },
+              "ResultPath": "$.query_batch",
+              "Next": "RunQueriesSequentially"
+            },
+            "RunQueriesSequentially": {
+              "Type": "Map",
+              "ItemsPath": "$.query_batch.queries",
+              "MaxConcurrency": 1,
+              "Parameters": {
+                "index_prefix.$": "$.index_prefix",
+                "index_filter.$": "$.index_filter",
+                "graph_suffix.$": "$.graph_suffix",
+                "anno_suffix.$": "$.anno_suffix",
+                "query_mode.$": "$.query_mode",
+                "num_top_labels.$": "$.num_top_labels",
+                "min_kmers_fraction_label.$": "$.min_kmers_fraction_label",
+                "query_filename.$": "States.Format('100_studies_{}_short.fq', $$.Map.Item.Value)",
+                "job_id.$": "States.Format('{}-{}', $.job_id, $$.Map.Item.Value)"
+              },
+              "Iterator": {
+                "StartAt": "InvokeMetagraphStateMachine",
+                "States": {
+                  "InvokeMetagraphStateMachine": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::states:startExecution.sync",
+                    "Parameters": {
+                      "StateMachineArn": "${MetagraphStateMachine}",
+                      "Input": {
+                        "index_prefix.$": "$.index_prefix",
+                        "index_filter.$": "$.index_filter",
+                        "graph_suffix.$": "$.graph_suffix",
+                        "anno_suffix.$": "$.anno_suffix",
+                        "query_mode.$": "$.query_mode",
+                        "num_top_labels.$": "$.num_top_labels",
+                        "min_kmers_fraction_label.$": "$.min_kmers_fraction_label",
+                        "query_filename.$": "$.query_filename",
+                        "job_id.$": "$.job_id"
+                      }
+                    },
+                    "Next": "Wait5Minutes"
+                  },
+                  "Wait5Minutes": {
+                    "Type": "Wait",
+                    "Seconds": 300,
+                    "End": true
+                  }
+                }
               },
               "End": true
             }

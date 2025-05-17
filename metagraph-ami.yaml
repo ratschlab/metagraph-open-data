@@ -25,7 +25,7 @@ Resources:
     Type: AWS::ImageBuilder::Component
     Properties:
       Name: !Sub "${AWS::StackName}-MountpointS3Setup"
-      Version: 1.0.0
+      Version: 1.0.1
       Platform: Linux
       Data: |
         name: MountpointS3Setup
@@ -39,14 +39,16 @@ Resources:
                 inputs:
                   commands:
                     - yum install -y wget
-                    - wget https://s3.amazonaws.com/mountpoint-s3-release/latest/x86_64/mount-s3.rpm
+                    - ARCH=$(uname -m)
+                    - if [ "$ARCH" != "x86_64" ]; then ARCH="arm64"; fi
+                    - wget https://s3.amazonaws.com/mountpoint-s3-release/latest/$ARCH/mount-s3.rpm
                     - yum install -y ./mount-s3.rpm
 
   MetagraphComponent:
     Type: AWS::ImageBuilder::Component
     Properties:
       Name: !Sub "${AWS::StackName}-MetagraphSetup"
-      Version: 1.0.0
+      Version: 1.0.1
       Platform: Linux
       Data: |
         name: MetagraphSetup
@@ -79,7 +81,7 @@ Resources:
                     - export CC=/usr/bin/gcc14-gcc
                     - export CXX=/usr/bin/gcc14-g++
                     - pushd /opt/metagraph/metagraph/external-libraries/sdsl-lite
-                    - sudo env CC=$CC CXX=$CXX ./install.sh $PWD
+                    - ./install.sh $PWD
                     - popd
               - name: BuildMetagraph
                 action: ExecuteBash
@@ -93,6 +95,14 @@ Resources:
                     - make -j$(nproc)
                     - make install
 
+  MetagraphArmInfraConfig:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      Name: MetagraphArmInfraConfig
+      InstanceTypes: [t4g.2xlarge]
+      InstanceProfileName: !Ref ImageBuilderInstanceProfile
+      TerminateInstanceOnFailure: true
+
   MetagraphInfraConfig:
     Type: AWS::ImageBuilder::InfrastructureConfiguration
     Properties:
@@ -101,15 +111,33 @@ Resources:
       InstanceProfileName: !Ref ImageBuilderInstanceProfile
       TerminateInstanceOnFailure: true
 
+  MetagraphArmImageRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: MetagraphArmImageRecipe
+      Version: 1.0.1
+      ParentImage: !Sub "arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-2023-ecs-optimized-arm64/x.x.x"
+      Components:
+        - ComponentArn: !Ref MountpointS3Component
+        - ComponentArn: !Ref MetagraphComponent
+
   MetagraphImageRecipe:
     Type: AWS::ImageBuilder::ImageRecipe
     Properties:
       Name: MetagraphImageRecipe
-      Version: 1.0.0
+      Version: 1.0.1
       ParentImage: !Sub "arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-2023-ecs-optimized-x86/x.x.x"
       Components:
         - ComponentArn: !Ref MountpointS3Component
         - ComponentArn: !Ref MetagraphComponent
+
+  MetagraphArmImagePipeline:
+    Type: AWS::ImageBuilder::Image
+    Properties:
+      ImageRecipeArn: !Ref MetagraphArmImageRecipe
+      InfrastructureConfigurationArn: !Ref MetagraphArmInfraConfig
+      ImageTestsConfiguration:
+        ImageTestsEnabled: false
 
   MetagraphImagePipeline:
     Type: AWS::ImageBuilder::Image
@@ -123,3 +151,7 @@ Outputs:
   AmiId:
     Value: !GetAtt MetagraphImagePipeline.ImageId
     Description: The ID of the built AMI
+  ArmAmiId:
+    Value: !GetAtt MetagraphArmImagePipeline.ImageId
+    Description: The ID of the built ARM AMI
+

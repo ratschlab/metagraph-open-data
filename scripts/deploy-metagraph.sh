@@ -2,8 +2,10 @@
 set -euo pipefail
 trap 'echo "Error on line $LINENO"; exit 1' ERR
 
-DEFAULT_AMI_ID="ami-0a6d16cc27aa7e3bc"
+DEFAULT_AMI_ID="ami-0275a9c8a1796999a"  # Default AMI ID for eu-west-1 region
+ARM_AMI_ID="ami-025f48d10dcdc89d4"
 DEFAULT_EMAIL="test@example.com"
+REGION="eu-west-1"
 
 AMI_ID=""
 EMAIL=""
@@ -107,11 +109,32 @@ if [[ -z "$EMAIL" ]]; then
   exit 1
 fi
 
+# === Detect default VPC and security group ===
+echo "Detecting default VPC and its security group in region $REGION..."
+
+VPC_ID=$(aws ec2 describe-vpcs \
+  --region "$REGION" \
+  --filters Name=isDefault,Values=true \
+  --query 'Vpcs[0].VpcId' \
+  --output text)
+
+SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
+  --region "$REGION" \
+  --filters Name=vpc-id,Values="$VPC_ID" Name=group-name,Values=default \
+  --query 'SecurityGroups[0].GroupId' \
+  --output text)
+
+echo "Using VPC: $VPC_ID"
+echo "Using Security Group: $SECURITY_GROUP_ID"
+
 # === Deploy main stack ===
 aws cloudformation deploy \
   --template-file metagraph-stack.yaml \
   --capabilities CAPABILITY_IAM \
   --stack-name MetagraphQuerySystem \
+  --region "$REGION" \
   --parameter-overrides \
     NotificationEmail="$EMAIL" \
-    MetagraphAmiId="$AMI_ID"
+    MetagraphAmiId="$AMI_ID" \
+    MetagraphArmAmiId="$ARM_AMI_ID" \
+    SecurityGroupId="$SECURITY_GROUP_ID"

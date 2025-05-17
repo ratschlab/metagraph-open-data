@@ -119,6 +119,10 @@ scripts/deploy-metagraph.sh --email test@example.com
 
 If you want to use your own Amazon Machine Image (AMI) for AWS Batch jobs (e.g., for security reasons or to support newer MetaGraph features), use `--ami ami-...` to provide your AMI ID or request that it is built using your AWS resources via `--ami build`. **The latter uses EC2 and may take up to 30 minutes!**
 
+### Request quota increase
+
+As querying MetaGraph is computationally demanding, you would need to use a lot of on-demand EC2 instances. The stack is designed to use `r6in` instances for smaller queries (load-bound) and `hpc7g` instances for larger queries (compute-bound). As the default quotas are pretty low, you'd likely need to request an increase for [standard instances](https://eu-west-1.console.aws.amazon.com/servicequotas/home/services/ec2/quotas/L-1216C47A), which includes `r6in`, as well as [HPC instances](https://eu-west-1.console.aws.amazon.com/servicequotas/home/services/ec2/quotas/L-F7808C92) (assuming that you expect to work with queries larger than 10 MiB).
+
 ### Upload your query to the S3 bucket
 
 ```sh
