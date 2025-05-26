@@ -834,7 +834,7 @@ Resources:
               t = event.copy()
 
               if not t["is_large_query"]:
-                  t["memory_mib"] = str(t["dataset_mib"] + 3 * 1000 * 2**t["retry_attempt"])
+                  t["memory_mib"] = str(t["dataset_mib"] + 6 * 1000 * 2**t["retry_attempt"])
                   t["job_queue"] = "${MetagraphBatchJobQueue}"
                   t["threads_each"] = "1"
               else:
