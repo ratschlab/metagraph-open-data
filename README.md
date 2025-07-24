@@ -16,7 +16,7 @@ This resources comprises MetaGraph index files that have been constructed from p
 * [SRA MetaGut](#sra-metagut-human-gut-microbiome)
 * [SRA Microbe](#sra-microbe)
 * [RefSeq](#refseq)
-* [Unified Human Gastrointestinal Genome](#unified-human-gastrointestinal-genome)
+* [Unified Human Gastrointestinal Genome](#unified-human-gastrointestinal-genome-uhgg)
 
 ### Logan Contig Subset
 These indexes use pre-assembled contigs from the [Logan](https://github.com/IndexThePlanet/Logan) project as input. For this pre-assembly singleton k-mers have been dropped and the assembly graph has been mildly cleaned.  
@@ -159,6 +159,10 @@ Three separate indexes were constructed from the RefSeq data, each offering a di
 3. **K-mer Coordinate Annotation**
    * Annotated with **k-mer coordinates** split by taxonomy buckets
    * **85,375** annotation columns with **coordinate tuples**
+  
+### Unified Human Gastrointestinal Genome (UHGG)
+
+The 
 
 ## Usage within AWS
 The following steps describe how to set up a search query across all or a subset of available index files.
