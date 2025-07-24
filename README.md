@@ -8,12 +8,26 @@ Currently, the index supports searches across more than 10 million individual sa
 ## Data
 
 ### Summary
+This resources comprises MetaGraph index files that have been constructed from publicly available input data gathered from a variety of sources over the past years. Please see Data sources below for a more detailed description. 
+
+## Data Sources (Overview)
+* [Logan Contig Subset](logan-contig-subset)
+* [SRA High-level Subsets](sra-high-level-subsets)
+* [SRA MetaGut](sra-metagut)
+* [SRA Microbe](sra-microbe)
+* [RefSeq](refseq)
+* [Unified Human Gastrointestinal Genome](unified-human-gastrointestinal-genome)
+
+### Logan Contig Subset
+These indexes use pre-assembled contigs from the [Logan](https://github.com/IndexThePlanet/Logan) project as input. For this pre-assembly singleton k-mers have been dropped and the assembly graph has been mildly cleaned.  
+
+#### Organisation
 Following the principle of phylogenetic compression, we have hierarchically clustered all samples using information from their biological taxonomy (as far as available). As a result, we currently have a pool of approximately 5,000 individual index chunks. Each of these chunks contains the information of a subset of the samples. Every chunk is assigned into one taxonomic categories. Overall, there are approx 200 taxonomic categories available, each containing only a few up to over 1,000 individual index chunks. The number of chunks within the same category is mostly driven by the number of samples available from that taxonomic group. The chunk size is limited for practical reasons, to allow for parallel construction and querying.
 
-### Available categories
+#### Available categories
 Individual categories were formed by grouping phylogenetically similar samples together. This grouping started at the species level of the taxonomic tree. If too few samples were available to form a chunk, the taxonomic parent was selected for aggregation for samples. The resulting list of categories is available [here](https://github.com/ratschlab/metagraph-open-data/blob/main/data/categories_available.tsv).
 
-### Dataset layout
+#### Dataset layout
 All data is available under the following root: [s3://metagraph/all_sra](https://metagraph.s3.amazonaws.com/index.html#all_sra/)
 
 ```
@@ -33,8 +47,7 @@ Where `category_A` would be one of the [Available categories](#available-categor
 
 As an example, to reach the data for the 10th chunk of the `metagenome` category, the resulting path would be `s3://metagraph/all_sra/data/metagenome/0010/`.
 
-
-### Chunk structure
+#### Chunk structure
 Irrespective of whether you are in the `data` or the `metadata` branch, each chunk contains a standardized set of files. 
 
 In the `data` branch one chunk contains:
@@ -52,6 +65,100 @@ In the `metadata` branch one chunk contains:
 metadata.tsv.gz
 ```
 This is a gzip-compress, human readable text file containing additional information about the samples that are contained within each index chunk.
+
+### SRA High-level Subsets
+These data sets contain indexes that are formed from grouping together SRA samples based on high-level taxonomic groups, prioritizing DNA whole genome sequencing (WGS) samples. The samples were selected using metadata queried via NCBI SRA’s BigQuery interface and underwent a cleaning pipeline to ensure data quality. The samples exclude sequencing data from long-read technologies like PacBio and Oxford Nanopore.
+
+#### Organisation
+Specifically, the following groups were formed:
+* fungi
+* human
+* metazoa (excluding human)
+* plants
+
+#### Dataset layout
+Each group has its data available at a dedicated S3 path (e.g., [s3://metagraph/fungi](https://metagraph.s3.amazonaws.com/index.html#fungi/)). Each dataset includes the graph file and the annotation file required for MetaGraph querying. MD5 checksums are provided for data integrity validation.
+
+Example directory structure for `fungi`:
+```
+s3://metagraph/fungi
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg.md5
++-- graph_primary_small.dbg
++-- graph_primary_small.dbg.md5
+```
+
+Please note that the `metazoa` and `human` have been split into chunks for simplified processing. The `metazoa` data is available as 17 separate chunks, each containing a specific graph and annotation file that need to be combined for query. The `human` data consists of a joint human graph as well as 11 separate annotation parts that can be sequentially used to retrieve different label sets.
+
+#### Sample Statistics
+* **Fungi** (NCBI TaxID: 4751):
+  125,585 samples processed; 114,839 (91.4%) successfully cleaned.
+* **Plants** (Viridiplantae; TaxID: 33090):
+  576,226 samples processed; 531,736 (92.3%) successfully cleaned.
+* **Human** (Homo sapiens; TaxID: 9606):
+  454,252 samples processed; 436,502 (96.1%) successfully cleaned.
+  Included assay types: WGS, AMPLICON, WXS, WGA, WCS, CLONE, POOLCLONE, FINISHING.
+* **Metazoa** (excluding human; TaxID: 33208):
+  906,401 samples processed; 805,239 (88.8%) successfully cleaned.
+
+### SRA-Microbe
+This subset replicates the original sample collection used in the BIGSI project. Though the data is outdated relative to the current SRA, it provides a valuable benchmark due to its historical significance.
+
+#### Dataset layout
+The data is available at [s3://metagraph/microbe](https://metagraph.s3.amazonaws.com/index.html#microbe/) and has the following layout, containing both the graph as well as annotation files and the respective checksums for integrity checks:
+```
+s3://metagraph/microbe
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg.md5
++-- graph_primary_small.dbg
++-- graph_primary_small.dbg.md5
+```
+
+#### Sample Statistics
+* 446,506 microbial genome sequences.
+
+### SRA-MetaGut (Human Gut Microbiome)
+This dataset comprises all samples classified under the human gut metagenome (TaxID: 408170), including both WGS and AMPLICON assay types, and excluding long-read sequencing platforms.
+
+#### Dataset layout
+The data is available at [s3://metagraph/metagut](https://metagraph.s3.amazonaws.com/index.html#metagut/) and has the following layout, containing both the graph as well as annotation files and the respective checksums for integrity checks:
+```
+s3://metagraph/metagut
++-- annotation_cluster_original.relaxed.row_diff_brwt.annodbg
++-- annotation_cluster_original.relaxed.row_diff_brwt.annodbg.md5
++-- graph_primary_small.dbg
++-- graph_primary_small.dbg.md5
+```
+
+#### Sample Statistics
+* 242,619 total samples:
+  * 177,759 (73.3%) AMPLICON
+  * 64,860 (26.7%) WGS
+
+### RefSeq
+
+The RefSeq index is built from the NCBI Reference Sequence (RefSeq) database, which provides a non-redundant, curated collection of genomic DNA, transcript, and protein sequences representing assembled reference genomes.
+
+#### Sample Statistics
+* Based on **RefSeq release 97**, covering:
+  * **32,881,422** nucleotide sequences
+  * **1.7 Tbp** total sequence length
+  * Compressed data size: **483 GB** (`gzip -9`)
+
+#### Index Structure
+Three separate indexes were constructed from the RefSeq data, each offering a different level of annotation granularity:
+
+1. **Genus-level Taxonomy Annotation**
+   * Annotated with **NCBI Taxonomy IDs** at the genus level
+   * **85,375** binary annotation columns
+
+2. **Accession-level Annotation**
+   * Annotated with **sequence accessions**
+   * **32,881,348** binary annotation columns
+
+3. **K-mer Coordinate Annotation**
+   * Annotated with **k-mer coordinates** split by taxonomy buckets
+   * **85,375** annotation columns with **coordinate tuples**
 
 ## Usage within AWS
 The following steps describe how to set up a search query across all or a subset of available index files.
