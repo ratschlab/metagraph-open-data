@@ -92,11 +92,11 @@ Please note that the `metazoa` and `human` have been split into chunks for simpl
 
 #### Sample Statistics
 * **Fungi** (NCBI TaxID: 4751):
-  125,585 samples processed; 114,839 (91.4%) successfully cleaned.
+  125,585 samples processed; 121,900 (97.1%) successfully cleaned.
 * **Plants** (Viridiplantae; TaxID: 33090):
-  576,226 samples processed; 531,736 (92.3%) successfully cleaned.
+  576,226 samples processed; 531,714 (92.3%) successfully cleaned.
 * **Human** (Homo sapiens; TaxID: 9606):
-  454,252 samples processed; 436,502 (96.1%) successfully cleaned.
+  454,252 samples processed; 436,494 (96.1%) successfully cleaned.
   Included assay types: WGS, AMPLICON, WXS, WGA, WCS, CLONE, POOLCLONE, FINISHING.
 * **Metazoa** (excluding human; TaxID: 33208):
   906,401 samples processed; 805,239 (88.8%) successfully cleaned.
@@ -131,9 +131,9 @@ s3://metagraph/metagut
 ```
 
 #### Sample Statistics
-* 242,619 total samples:
-  * 177,759 (73.3%) AMPLICON
-  * 64,860 (26.7%) WGS
+* 241,384 total samples:
+  * 176,735 (73.2%) AMPLICON
+  * 64,849 (26.9%) WGS
 
 ### RefSeq
 
@@ -141,7 +141,6 @@ The RefSeq index is built from the NCBI Reference Sequence (RefSeq) database, wh
 
 #### Sample Statistics
 * Based on **RefSeq release 97**, covering:
-  * **32,881,422** nucleotide sequences
   * **1.7 Tbp** total sequence length
   * Compressed data size: **483 GB** (`gzip -9`)
 
