@@ -11,12 +11,12 @@ Currently, the index supports searches across more than 10 million individual sa
 This resources comprises MetaGraph index files that have been constructed from publicly available input data gathered from a variety of sources over the past years. Please see Data sources below for a more detailed description. 
 
 ## Data Sources (Overview)
-* [Logan Contig Subset](logan-contig-subset)
-* [SRA High-level Subsets](sra-high-level-subsets)
-* [SRA MetaGut](sra-metagut)
-* [SRA Microbe](sra-microbe)
-* [RefSeq](refseq)
-* [Unified Human Gastrointestinal Genome](unified-human-gastrointestinal-genome)
+* [Logan Contig Subset](#logan-contig-subset)
+* [SRA High-level Subsets](#sra-high-level-subsets)
+* [SRA MetaGut](#sra-metagut)
+* [SRA Microbe](#sra-microbe)
+* [RefSeq](#refseq)
+* [Unified Human Gastrointestinal Genome](#unified-human-gastrointestinal-genome)
 
 ### Logan Contig Subset
 These indexes use pre-assembled contigs from the [Logan](https://github.com/IndexThePlanet/Logan) project as input. For this pre-assembly singleton k-mers have been dropped and the assembly graph has been mildly cleaned.  
