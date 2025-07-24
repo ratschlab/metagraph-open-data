@@ -181,6 +181,26 @@ s3://metagraph/uhgg_all
 * UHGG (all sequences):
   * **286,997** non-redundant genomes
 
+### Tara Oceans
+
+This collection contains genomes reconstructed from metagenomic data sets from major oceanographical surveys of global ocean microbial communities across ocean basins, depth layers, and time. The dataset is augmented with reference genome sequences of marine bacteria and archaea from other existing databases. For more details on the data composition, refer to the [original publication](https://www.nature.com/articles/s41586-022-04862-3).
+
+#### Dataset layout
+The data is available at [s3://metagraph/uhgg_all](https://metagraph.s3.amazonaws.com/index.html#uhgg_all/). An example layout for `tara_oceans`, containing both the graph as well as annotation files and the respective checksums for integrity checks:
+```
+s3://metagraph/uhgg_all
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg.md5
++-- graph_complete_k31.dbg
++-- graph_complete_k31.dbg.md5
++-- graph_complete_k31.small.dbg
++-- graph_complete_k31.small.dbg.md5
+```
+
+#### Sample Statistics
+* **34,815** genomes
+* **318,205,057** scaffolds
+
 ## Usage within AWS
 The following steps describe how to set up a search query across all or a subset of available index files.
 
