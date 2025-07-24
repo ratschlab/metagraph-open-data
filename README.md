@@ -187,15 +187,23 @@ s3://metagraph/uhgg_all
 This collection contains genomes reconstructed from metagenomic data sets from major oceanographical surveys of global ocean microbial communities across ocean basins, depth layers, and time. The dataset is augmented with reference genome sequences of marine bacteria and archaea from other existing databases. For more details on the data composition, refer to the [original publication](https://www.nature.com/articles/s41586-022-04862-3).
 
 #### Dataset layout
-The data is available at [s3://metagraph/uhgg_all](https://metagraph.s3.amazonaws.com/index.html#uhgg_all/). An example layout for `tara_oceans`, containing both the graph as well as annotation files and the respective checksums for integrity checks:
+The data is available at [s3://metagraph/tara_oceans](https://metagraph.s3.amazonaws.com/index.html#tara_oceans/). Indexes are provided for both the genomes (`genomes_*`) and scaffolds (`scaffolds_*`). The genome index has annotations for both k-mer presence/absence (i.e., binary; `genomes_annotation.row_diff_brwt.annodbg`) and for coordinates (`genomes_annotation.row_diff_brwt_coord.annodbg`). The layout for `tara_oceans`, containing both the graph as well as annotation files and the respective checksums for integrity checks:
 ```
 s3://metagraph/uhgg_all
-+-- annotation.relaxed.relabeled.row_diff_brwt.annodbg
-+-- annotation.relaxed.relabeled.row_diff_brwt.annodbg.md5
-+-- graph_complete_k31.dbg
-+-- graph_complete_k31.dbg.md5
-+-- graph_complete_k31.small.dbg
-+-- graph_complete_k31.small.dbg.md5
++-- genomes_annotation.row_diff_brwt.annodbg
++-- genomes_annotation.row_diff_brwt.annodbg.md5
++-- genomes_annotation.row_diff_brwt_coord.annodbg
++-- genomes_annotation.row_diff_brwt_coord.annodbg.md5
++-- genomes_graph.dbg
++-- genomes_graph.dbg.md5
++-- genomes_graph_small.dbg
++-- genomes_graph_small.dbg.md5
++-- scaffolds_annotation.row_diff_flat.annodbg
++-- scaffolds_annotation.row_diff_flat.annodbg.md5
++-- scaffolds_graph.dbg
++-- scaffolds_graph.dbg.md5
++-- scaffolds_graph_small.dbg
++-- scaffolds_graph_small.dbg.md5
 ```
 
 #### Sample Statistics
