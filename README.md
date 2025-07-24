@@ -13,7 +13,7 @@ This resources comprises MetaGraph index files that have been constructed from p
 ## Data Sources (Overview)
 * [Logan Contig Subset](#logan-contig-subset)
 * [SRA High-level Subsets](#sra-high-level-subsets)
-* [SRA MetaGut](#sra-metagut)
+* [SRA MetaGut](#sra-metagut-human-gut-microbiome)
 * [SRA Microbe](#sra-microbe)
 * [RefSeq](#refseq)
 * [Unified Human Gastrointestinal Genome](#unified-human-gastrointestinal-genome)
