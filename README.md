@@ -17,6 +17,7 @@ This resources comprises MetaGraph index files that have been constructed from p
 * [SRA Microbe](#sra-microbe)
 * [RefSeq](#refseq)
 * [Unified Human Gastrointestinal Genome](#unified-human-gastrointestinal-genome-uhgg)
+* [Tara Oceans](#tara-oceans)
 
 ### Logan Contig Subset
 These indexes use pre-assembled contigs from the [Logan](https://github.com/IndexThePlanet/Logan) project as input. For this pre-assembly singleton k-mers have been dropped and the assembly graph has been mildly cleaned.  
