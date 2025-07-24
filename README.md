@@ -162,7 +162,25 @@ Three separate indexes were constructed from the RefSeq data, each offering a di
   
 ### Unified Human Gastrointestinal Genome (UHGG)
 
-The 
+This dataset consists of high-quality assemblies of genomes from human gut microbiomes, catalogued [here](https://www.ebi.ac.uk/metagenomics/genome-catalogues/human-gut-v2-0-2).
+
+#### Dataset layout
+The data is available at [s3://metagraph/uhgg_catalogue](https://metagraph.s3.amazonaws.com/index.html#uhgg_catalogue/) and [s3://metagraph/uhgg_all](https://metagraph.s3.amazonaws.com/index.html#uhgg_all/). An example layout for `uhgg_all`, containing both the graph as well as annotation files and the respective checksums for integrity checks:
+```
+s3://metagraph/uhgg_all
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg.md5
++-- graph_complete_k31.dbg
++-- graph_complete_k31.dbg.md5
++-- graph_complete_k31.small.dbg
++-- graph_complete_k31.small.dbg.md5
+```
+
+#### Sample Statistics
+* UHGG (catalogue):
+  * **4,644** reference genomes
+* UHGG (all sequences):
+  * **286,997** non-redundant genomes
 
 ## Usage within AWS
 The following steps describe how to set up a search query across all or a subset of available index files.
