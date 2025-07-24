@@ -16,7 +16,7 @@ This resources comprises MetaGraph index files that have been constructed from p
 * [SRA MetaGut](#sra-metagut-human-gut-microbiome)
 * [SRA Microbe](#sra-microbe)
 * [RefSeq](#refseq)
-* [Unified Human Gastrointestinal Genome](#unified-human-gastrointestinal-genome)
+* [Unified Human Gastrointestinal Genome](#unified-human-gastrointestinal-genome-uhgg)
 
 ### Logan Contig Subset
 These indexes use pre-assembled contigs from the [Logan](https://github.com/IndexThePlanet/Logan) project as input. For this pre-assembly singleton k-mers have been dropped and the assembly graph has been mildly cleaned.  
@@ -159,6 +159,28 @@ Three separate indexes were constructed from the RefSeq data, each offering a di
 3. **K-mer Coordinate Annotation**
    * Annotated with **k-mer coordinates** split by taxonomy buckets
    * **85,375** annotation columns with **coordinate tuples**
+  
+### Unified Human Gastrointestinal Genome (UHGG)
+
+This dataset consists of high-quality assemblies of genomes from human gut microbiomes, catalogued [here](https://www.ebi.ac.uk/metagenomics/genome-catalogues/human-gut-v2-0-2). We provide indexes for v1.0 of the dataset.
+
+#### Dataset layout
+The data is available at [s3://metagraph/uhgg_catalogue](https://metagraph.s3.amazonaws.com/index.html#uhgg_catalogue/) and [s3://metagraph/uhgg_all](https://metagraph.s3.amazonaws.com/index.html#uhgg_all/). An example layout for `uhgg_all`, containing both the graph as well as annotation files and the respective checksums for integrity checks:
+```
+s3://metagraph/uhgg_all
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg
++-- annotation.relaxed.relabeled.row_diff_brwt.annodbg.md5
++-- graph_complete_k31.dbg
++-- graph_complete_k31.dbg.md5
++-- graph_complete_k31.small.dbg
++-- graph_complete_k31.small.dbg.md5
+```
+
+#### Sample Statistics
+* UHGG (catalogue):
+  * **4,644** reference genomes
+* UHGG (all sequences):
+  * **286,997** non-redundant genomes
 
 ## Usage within AWS
 The following steps describe how to set up a search query across all or a subset of available index files.
