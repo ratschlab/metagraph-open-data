@@ -2,6 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Builds a Metagraph + mount-s3 custom AMI using EC2 Image Builder.'
 
 Resources:
+  # Need to allow s3:PutObject if logging is enabled
   ImageBuilderInstanceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -25,7 +26,7 @@ Resources:
     Type: AWS::ImageBuilder::Component
     Properties:
       Name: !Sub "${AWS::StackName}-MountpointS3Setup"
-      Version: 1.0.1
+      Version: 1.0.8
       Platform: Linux
       Data: |
         name: MountpointS3Setup
@@ -48,7 +49,7 @@ Resources:
     Type: AWS::ImageBuilder::Component
     Properties:
       Name: !Sub "${AWS::StackName}-MetagraphSetup"
-      Version: 1.0.1
+      Version: 1.0.8
       Platform: Linux
       Data: |
         name: MetagraphSetup
@@ -95,6 +96,7 @@ Resources:
                     - make -j$(nproc)
                     - make install
 
+  # Consider Logging::S3Logs if the build process needs debugging
   MetagraphArmInfraConfig:
     Type: AWS::ImageBuilder::InfrastructureConfiguration
     Properties:
@@ -115,7 +117,7 @@ Resources:
     Type: AWS::ImageBuilder::ImageRecipe
     Properties:
       Name: MetagraphArmImageRecipe
-      Version: 1.0.1
+      Version: 1.0.8
       ParentImage: !Sub "arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-2023-ecs-optimized-arm64/x.x.x"
       Components:
         - ComponentArn: !Ref MountpointS3Component
@@ -125,7 +127,7 @@ Resources:
     Type: AWS::ImageBuilder::ImageRecipe
     Properties:
       Name: MetagraphImageRecipe
-      Version: 1.0.1
+      Version: 1.0.8
       ParentImage: !Sub "arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-2023-ecs-optimized-x86/x.x.x"
       Components:
         - ComponentArn: !Ref MountpointS3Component
