@@ -102,7 +102,7 @@ cd metagraph-open-data
 
 ### Deploy the Cloud Formation template
 
-**We assume that you work in the `eu-central-2` region, and your `aws` authentication is configured in the `default` profile.**
+**We assume that you work in the `eu-west-1` region, and your `aws` authentication is configured in the `default` profile.**
 
  The [deployment script](https://github.com/ratschlab/metagraph-open-data/blob/main/scripts/deploy-metagraph.sh) will setup the following on your AWS using the [CloudFormation template](https://github.com/ratschlab/metagraph-open-data/blob/main/metagraph-stack.yaml):
 
