@@ -147,12 +147,12 @@ It will create a dedicated AWS Batch job for each queried chunk, adjusting alloc
 
 You can use `start-metagraph-job.sh` with parameters `-h` to read a help message with the list of possible parameters, or `--interactive` to specify parameters in an interactive manner. Notable parameters:
 
-- `cmd` -- command to pass to the [MetaGraph CLI](https://github.com/ratschlab/metagraph) (e.g. `query` or `align`).
-- `query-filename` (required) -- the names of the query file that was already uploaded with `upload-query.sh`, e.g. `test_query.fasta` or `100_studies_short.fq`.
-- `index-prefix` (default: `all_sra/data/metagenome`) -- the prefix on [s3://metagraph](https://metagraph.s3.amazonaws.com/index.html).
-- `index-filter` (default: `.*`) -- a regexp to app to dataset names after matching the prefix.
-- `graph-suffix` (default: `small.dbg`) and `anno-suffix` (default: `brwt.annodbg`) -- specify graph and annotation representations, as encoded in their file extensions.
-- `merge` (default: `true`) -- whether to merge results into single file. Only supported for `query` in `labels` and `matches` query modes.
-- `extra_args` -- anything else you would like to pass to the CLI in the free form.
+- `cmd`: command to pass to the [MetaGraph CLI](https://github.com/ratschlab/metagraph) (e.g. `query` or `align`).
+- `query-filename` (required): the names of the query file that was already uploaded with `upload-query.sh`, e.g. `test_query.fasta` or `100_studies_short.fq`.
+- `index-prefix` (default: `all_sra/data/metagenome`): the prefix on [s3://metagraph](https://metagraph.s3.amazonaws.com/index.html). Only chunks in the subdirectories of `index_prefix` will be considered for querying.
+- `index-filter` (default: `.*`): an [re](https://docs.python.org/3/library/re.html)-compatible regular expression to filter paths to chunks on which the query is to be executed.
+- `graph-suffix` (default: `small.dbg`) and `anno-suffix` (default: `brwt.annodbg`): specify graph and annotation representations, as encoded in their file extensions.
+- `merge` (default: `true`): whether to merge results into single file. Only supported for `query` in `labels` and `matches` query modes.
+- `extra_args`: anything else you would like to pass to the CLI in the free form.
 
 In the end, you will be sent a notification containing a link to download merged results (valid for 7 days), and a cost estimation for the query. Note: The cost estimation assumes that it was the only query active at the time, and will likely provide inaccurate results otherwise.
