@@ -119,7 +119,7 @@ scrpts/deploy-metagraph.sh [--build-ami] [--ami <ami-id>] [--arm-ami <arm-ami-id
 
 If you want to be guided in an interactive manner, you can simply use `scripts/deploy-metagraph.sh --interactive`.
 
-If you want to receive Simple Notification Service (SNS) notifications after a query is processed, you will have to provide your email. **You need to confirm the subscription via a link sent in an e-mail to your mailbox.**.
+If you want to receive Simple Notification Service (SNS) notifications after a query is processed, you will have to provide your email. **You need to confirm the subscription via a link sent in an e-mail to your mailbox**.
 
 You can use the default Amazon Machine Images (AMI) for AWS Batch jobs, provide your own or build them using the recipe from [metagraph-ami.yaml](https://github.com/ratschlab/metagraph-open-data/blob/main/metagraph-ami.yaml) (e.g., for security reasons or to support newer MetaGraph features). **The latter uses EC2 and may take up to 30 minutes!**
 
