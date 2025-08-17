@@ -259,7 +259,7 @@ cd metagraph-open-data
 
 ### Deploy the Cloud Formation template
 
-**We assume that you work in the `eu-central-2` region, and your `aws` authentication is configured in the `default` profile.**
+**We assume that you work in the `eu-west-1` region, and your `aws` authentication is configured in the `default` profile.**
 
  The [deployment script](https://github.com/ratschlab/metagraph-open-data/blob/main/scripts/deploy-metagraph.sh) will setup the following on your AWS using the [CloudFormation template](https://github.com/ratschlab/metagraph-open-data/blob/main/metagraph-stack.yaml):
 
@@ -268,13 +268,21 @@ cd metagraph-open-data
 - Step Function and Lambdas to schedule your queries as individual Batch tasks and merge their results;
 - SNS topic to send notifications to when the query is fully processed.
 
-If you want to receive Simple Notification Service (SNS) notifications after a query is processed, you have to provide your email to the script using the `--email test@example.com` argument. **You need to confirm the subscription via a link sent in an e-mail to your mailbox.**:
+The script has the following usage pattern:
 
 ```sh
-scripts/deploy-metagraph.sh --email test@example.com
+scrpts/deploy-metagraph.sh [--build-ami] [--ami <ami-id>] [--arm-ami <arm-ami-id>] [--email your@email.com] [--interactive]
 ```
 
-If you want to use your own Amazon Machine Image (AMI) for AWS Batch jobs (e.g., for security reasons or to support newer MetaGraph features), use `--ami ami-...` to provide your AMI ID or request that it is built using your AWS resources via `--ami build`. **The latter uses EC2 and may take up to 30 minutes!**
+If you want to be guided in an interactive manner, you can simply use `scripts/deploy-metagraph.sh --interactive`.
+
+If you want to receive Simple Notification Service (SNS) notifications after a query is processed, you will have to provide your email. **You need to confirm the subscription via a link sent in an e-mail to your mailbox**.
+
+You can use the default Amazon Machine Images (AMI) for AWS Batch jobs, provide your own or build them using the recipe from [metagraph-ami.yaml](https://github.com/ratschlab/metagraph-open-data/blob/main/metagraph-ami.yaml) (e.g., for security reasons or to support newer MetaGraph features). **The latter uses EC2 and may take up to 30 minutes!**
+
+### Request quota increase
+
+As querying MetaGraph is computationally demanding, you would need to use a lot of on-demand EC2 instances. The stack is designed to use `r6in` instances for smaller queries (load-bound) and `hpc7g` instances for larger queries (compute-bound). As the default quotas are pretty low, you'd likely need to request an increase for [standard instances](https://eu-west-1.console.aws.amazon.com/servicequotas/home/services/ec2/quotas/L-1216C47A), which includes `r6in`, as well as [HPC instances](https://eu-west-1.console.aws.amazon.com/servicequotas/home/services/ec2/quotas/L-F7808C92) (assuming that you expect to work with queries larger than 10 MiB).
 
 ### Upload your query to the S3 bucket
 
@@ -286,62 +294,22 @@ You can upload your own queries by providing `/path/to/query.fasta` instead of [
 
 ### Submit a job
 
-You need to describe your query in a JSON file. A minimal job definition ([`examples/scheduler-payload.json`](https://github.com/ratschlab/metagraph-open-data/blob/main/examples/scheduler-payload.json)) looks as follows:
-
-```json
-{
-    "index_prefix": "all_sra",
-    "query_filename": "test_query.fasta",
-    "index_filter": ".*000[1-5]$"
-}
-```
-
-As of now, only dataset indexes stored in `s3://metagraph` are supported. Generally, the arguments that you can provide are as follows:
-
-- `index_prefix`, e.g. `all_sra` or `all_sra/data/metagenome`. Only chunks in the subdirectories of `index_prefix` will be considered for querying.
-- `query_filename`, the filename of the query that you previously uploaded via `scripts/upload-query.sh`.
-- `index_filter` (`.*` by default), a [re](https://docs.python.org/3/library/re.html)-compatible regular expression to filter paths to chunks on which the query is to be executed.
-
-Additionally, you can specify the following parameters to be passed to the [MetaGraph CLI](https://github.com/ratschlab/metagraph) for all queried chunks:
-
-- `query_mode` (`labels` by default),
-- `num_top_labels` (`inf` by default),
-- `min_kmers_fraction_label` (`0.7` by default),
-- `min_kmers_fraction_graph` (`0.0` by default).
-
-You can submit the query for execution with the following command:
+You can use `scripts/start-metagraph-job.sh` to submit a job to the query system:
 
 ```sh
-scripts/start-metagraph-job.sh examples/scheduler-payload.json
+scripts/start-metagraph-job.sh --query-filename test_query.fasta --index-filter 000[1-9]
 ```
 
 It will create a dedicated AWS Batch job for each queried chunk, adjusting allocated memory (RAM) to the chunk size.
 
-#### Large query example
+You can use `start-metagraph-job.sh` with parameters `-h` to read a help message with the list of possible parameters, or `--interactive` to specify parameters in an interactive manner. Notable parameters:
 
-You can use our example JSON payload for the large query in [`examples/large-query.json`](https://github.com/ratschlab/metagraph-open-data/blob/main/examples/large-query.json):
+- `cmd`: command to pass to the [MetaGraph CLI](https://github.com/ratschlab/metagraph) (e.g. `query` or `align`).
+- `query-filename` (required): the names of the query file that was already uploaded with `upload-query.sh`, e.g. `test_query.fasta` or `100_studies_short.fq`.
+- `index-prefix` (default: `all_sra/data/metagenome`): the prefix on [s3://metagraph](https://metagraph.s3.amazonaws.com/index.html). Only chunks in the subdirectories of `index_prefix` will be considered for querying.
+- `index-filter` (default: `.*`): an [re](https://docs.python.org/3/library/re.html)-compatible regular expression to filter paths to chunks on which the query is to be executed.
+- `graph-suffix` (default: `small.dbg`) and `anno-suffix` (default: `brwt.annodbg`): specify graph and annotation representations, as encoded in their file extensions.
+- `merge` (default: `true`): whether to merge results into single file. Only supported for `query` in `labels` and `matches` query modes.
+- `extra_args`: anything else you would like to pass to the CLI in the free form.
 
-```json
-{
-    "index_prefix": "all_sra",
-    "query_filename": "100_studies_short.fq",
-    "index_filter": ".*001[0-9]$",
-    "query_mode": "matches",
-    "num_top_labels": "10",
-    "min_kmers_fraction_label": "0"
-}
-```
-
-This will execute the following command for all chunks from `0010` to `0019`:
-
-```sh
-metagraph query -i graph.primary.small.dbg \
-                -a annotation.clean.row_diff_brwt.annodbg \
-                --query-mode matches \
-                --num-top-labels 10 \
-                --min-kmers-fraction-label 0 \
-                --min-kmers-fraction-graph 0 \
-                100_studies_short.fq
-```
-
-Then, it will save the resulting file in the S3. When all chunks are processed, a dedicated script will merge the results in a single file and send you a notification.
+In the end, you will be sent a notification containing a link to download merged results (valid for 7 days), and a cost estimation for the query. Note: The cost estimation assumes that it was the only query active at the time, and will likely provide inaccurate results otherwise.
