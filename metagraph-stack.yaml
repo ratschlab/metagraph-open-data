@@ -199,108 +199,6 @@ Resources:
                   - !Sub 'arn:aws:s3:::${MetagraphBucket}'
                   - !Sub 'arn:aws:s3:::${MetagraphBucket}/*'
 
-### Main stack bucket
-  MetagraphBucket:
-    Type: AWS::S3::Bucket
-
-### SNS topic for notifications
-  MetagraphNotificationTopic:
-    Type: AWS::SNS::Topic
-
-  MetagraphNotificationSubscription:
-    Type: AWS::SNS::Subscription
-    Properties:
-      TopicArn: !Ref MetagraphNotificationTopic
-      Protocol: email
-      Endpoint: !Ref NotificationEmail
-
-  MetagraphArmLaunchTemplate:
-    Type: AWS::EC2::LaunchTemplate
-    Properties:
-      LaunchTemplateData:
-        IamInstanceProfile:
-          Name: !Ref ECSInstanceProfile
-        ImageId: !Ref MetagraphArmAmiId
-        UserData:
-          Fn::Base64: !Sub |
-            MIME-Version: 1.0
-            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-
-            --==BOUNDARY==
-            Content-Type: text/x-shellscript; charset="us-ascii"
-
-            #!/bin/bash
-            set -eux
-
-            for svc in sshd amazon-ssm-agent systemd-journald; do
-              mkdir -p "/etc/systemd/system/$svc.service.d"
-              cat >"/etc/systemd/system/$svc.service.d/oom.conf" <<'EOF'
-            [Service]
-            OOMScoreAdjust=-900
-            EOF
-            done
-
-            systemctl daemon-reload
-            systemctl restart sshd amazon-ssm-agent systemd-journald
-
-            mkdir -p /mnt/data
-            mkdir -p /mnt/bucket
-
-            export UNSTABLE_MOUNTPOINT_MAX_PREFETCH_WINDOW_SIZE=536870912
-
-            mount-s3 --read-only metagraph /mnt/data
-            mount-s3 ${MetagraphBucket} /mnt/bucket
-
-            for pid in $(pidof mount-s3); do
-                echo -1000 > /proc/$pid/oom_score_adj
-            done
-
-            --==BOUNDARY==--
-
-### Launch template for container service with s3 bucket mounting
-  MetagraphLaunchTemplate:
-    Type: AWS::EC2::LaunchTemplate
-    Properties:
-      LaunchTemplateData:
-        IamInstanceProfile:
-          Name: !Ref ECSInstanceProfile
-        ImageId: !Ref MetagraphAmiId
-        UserData:
-          Fn::Base64: !Sub |
-            MIME-Version: 1.0
-            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-
-            --==BOUNDARY==
-            Content-Type: text/x-shellscript; charset="us-ascii"
-
-            #!/bin/bash
-            set -eux
-
-            for svc in sshd amazon-ssm-agent systemd-journald; do
-              mkdir -p "/etc/systemd/system/$svc.service.d"
-              cat >"/etc/systemd/system/$svc.service.d/oom.conf" <<'EOF'
-            [Service]
-            OOMScoreAdjust=-900
-            EOF
-            done
-
-            systemctl daemon-reload
-            systemctl restart sshd amazon-ssm-agent systemd-journald
-
-            mkdir -p /mnt/data
-            mkdir -p /mnt/bucket
-
-            export UNSTABLE_MOUNTPOINT_MAX_PREFETCH_WINDOW_SIZE=536870912
-
-            mount-s3 --read-only metagraph /mnt/data
-            mount-s3 ${MetagraphBucket} /mnt/bucket
-
-            for pid in $(pidof mount-s3); do
-                echo -1000 > /proc/$pid/oom_score_adj
-            done
-
-            --==BOUNDARY==--
-
   AgentDisconnectHandlerRole:
     Type: AWS::IAM::Role
     Properties:
@@ -339,6 +237,106 @@ Resources:
                   - autoscaling:TerminateInstanceInAutoScalingGroup
                 Resource: "*"
 
+### Main stack bucket
+  MetagraphBucket:
+    Type: AWS::S3::Bucket
+
+### SNS topic for notifications
+  MetagraphNotificationTopic:
+    Type: AWS::SNS::Topic
+
+  MetagraphNotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref MetagraphNotificationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+### Launch templates for container service with s3 bucket mounting
+  MetagraphArmLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        IamInstanceProfile: { Name: !Ref ECSInstanceProfile }
+        ImageId: !Ref MetagraphArmAmiId
+        UserData:
+          Fn::Base64: !Sub |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+
+            --==BOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            set -eux
+
+            for svc in sshd amazon-ssm-agent systemd-journald; do
+              mkdir -p "/etc/systemd/system/$svc.service.d"
+              cat >"/etc/systemd/system/$svc.service.d/oom.conf" <<'EOF'
+            [Service]
+            OOMScoreAdjust=-900
+            EOF
+            done
+
+            systemctl daemon-reload
+            systemctl restart sshd amazon-ssm-agent systemd-journald
+
+            mkdir -p /mnt/data /mnt/bucket
+
+            export UNSTABLE_MOUNTPOINT_MAX_PREFETCH_WINDOW_SIZE=536870912
+
+            mount-s3 --read-only metagraph /mnt/data
+            mount-s3 ${MetagraphBucket} /mnt/bucket
+
+            for pid in $(pidof mount-s3); do
+              echo -1000 > /proc/$pid/oom_score_adj
+            done
+
+            --==BOUNDARY==--
+
+  MetagraphLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        IamInstanceProfile: { Name: !Ref ECSInstanceProfile }
+        ImageId: !Ref MetagraphAmiId
+        UserData:
+          Fn::Base64:
+          Fn::Base64: !Sub |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+
+            --==BOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            set -eux
+
+            for svc in sshd amazon-ssm-agent systemd-journald; do
+              mkdir -p "/etc/systemd/system/$svc.service.d"
+              cat >"/etc/systemd/system/$svc.service.d/oom.conf" <<'EOF'
+            [Service]
+            OOMScoreAdjust=-900
+            EOF
+            done
+
+            systemctl daemon-reload
+            systemctl restart sshd amazon-ssm-agent systemd-journald
+
+            mkdir -p /mnt/data /mnt/bucket
+
+            export UNSTABLE_MOUNTPOINT_MAX_PREFETCH_WINDOW_SIZE=536870912
+
+            mount-s3 --read-only metagraph /mnt/data
+            mount-s3 ${MetagraphBucket} /mnt/bucket
+
+            for pid in $(pidof mount-s3); do
+              echo -1000 > /proc/$pid/oom_score_adj
+            done
+
+            --==BOUNDARY==--
+
+### Handling ECS agent disconnects
   AgentDisconnectedQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -416,6 +414,7 @@ Resources:
       EventSourceArn: !GetAtt AgentDisconnectedQueue.Arn
       FunctionName: !Ref AgentDisconnectHandler
 
+### hpc7a Compute Environment for RAM- and compute-intensive jobs
   MetagraphSuperBatchComputeEnvironment:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
@@ -439,6 +438,7 @@ Resources:
           LaunchTemplateId: !Ref MetagraphLaunchTemplate
           Version: !GetAtt MetagraphLaunchTemplate.LatestVersionNumber
 
+### hpc7g Compute Environment for compute-intensive jobs
   MetagraphLargeBatchComputeEnvironment:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
@@ -462,6 +462,7 @@ Resources:
           LaunchTemplateId: !Ref MetagraphArmLaunchTemplate
           Version: !GetAtt MetagraphArmLaunchTemplate.LatestVersionNumber
 
+### r6in Compute Environment for network-intensive jobs
   MetagraphBatchComputeEnvironment:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
@@ -487,6 +488,7 @@ Resources:
           LaunchTemplateId: !Ref MetagraphLaunchTemplate
           Version: !GetAtt MetagraphLaunchTemplate.LatestVersionNumber
 
+### Job queues for different compute environments
   MetagraphSuperBatchJobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
@@ -529,6 +531,7 @@ Resources:
         Reason: MISCONFIGURATION:JOB_RESOURCE_REQUIREMENT
         MaxTimeSeconds: 600
 
+### Job definition for results merger job
   MetagraphMergeJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
@@ -619,6 +622,7 @@ Resources:
             Value: "1"
         JobRoleArn: !GetAtt MetagraphBatchJobRole.Arn
 
+### Job definition for querying the dataset
   MetagraphBatchJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
@@ -677,6 +681,7 @@ Resources:
             fi
 
             PROC=$(eval echo "$PROC")
+            RESULTS=$AWS_BATCH_JOB_ID.txt
 
             case "${CMD:-query}" in
               query)
@@ -688,7 +693,7 @@ Resources:
                   --num-top-labels "$NUM_TOP_LABELS" \
                   --min-kmers-fraction-label "$MIN_KMERS_FRACTION_LABEL" \
                   --min-kmers-fraction-graph "$MIN_KMERS_FRACTION_GRAPH" \
-                  "/mnt/bucket/$QUERY" > result.txt
+                  "/mnt/bucket/$QUERY" > $RESULTS
                 ;;
               align)
                 $TIME_CMD metagraph align $EXTRA_ARGS \
@@ -697,7 +702,7 @@ Resources:
                   -a "/mnt/data/$DATASET/$ANNO_FILE" \
                   --align-min-seed-length "$ALIGN_MIN_SEED_LENGTH" \
                   --align-min-exact-match "$ALIGN_MIN_EXACT_MATCH" \
-                  "/mnt/bucket/$QUERY" > result.txt
+                  "/mnt/bucket/$QUERY" > $RESULTS
                 ;;
               *)
                 echo "Unsupported CMD value: ${CMD}" >&2
@@ -705,15 +710,16 @@ Resources:
                 ;;
             esac
 
-            echo "Sorting result.txt by index..."
-            sort -t $'\t' -k1,1n result.txt -o result.txt
+            echo "Sorting $RESULTS by index..."
+            sort -t $'\t' -k1,1n $RESULTS -o $RESULTS
 
-            echo "Copying result.txt to /mnt/bucket/$JOB_ID/$AWS_BATCH_JOB_ID.txt..."
+            echo "Copying $RESULTS to /mnt/bucket/$JOB_ID..."
             mkdir -p "/mnt/bucket/$JOB_ID"
-            cp result.txt "/mnt/bucket/$JOB_ID/$AWS_BATCH_JOB_ID.txt"
+            cp $RESULTS "/mnt/bucket/$JOB_ID"
             echo "Copy completed successfully."
         JobRoleArn: !GetAtt MetagraphBatchJobRole.Arn
 
+### Composes datasets matching filters into tasks
   MetagraphTaskCollector:
     Type: AWS::Lambda::Function
     Properties:
@@ -801,7 +807,7 @@ Resources:
                       "extra_args":    q.get("extra_args", ""),
                       "batch_size":    str(q.get("batch_size", 8*10**6)),
                       "proc":          q.get("proc", "$(nproc)"),
-                      "job_id":        f"{job_id}-{path.replace('/', '-')}",
+                      "job_id":        job_id,
                       "dataset_mib":   dataset_mib,
                       "is_large_query":is_large_query,
                       "retry_attempt": 0
@@ -815,6 +821,7 @@ Resources:
                   "merge":         q.get("merge", False)
               }
 
+### For the input task, decides RAM/CPU parameters and the queue to be used
   MetagraphTaskConfigurator:
     Type: AWS::Lambda::Function
     Properties:
@@ -851,6 +858,7 @@ Resources:
               t["retry_attempt"] += 1
               return t
 
+### Approximate cost estimation for the query
   MetagraphCostEstimator:
     Type: AWS::Lambda::Function
     Properties:
@@ -968,6 +976,7 @@ Resources:
                   "per_instance_breakdown": instance_details
               }
 
+### Post result notification by email
   MetagraphNotifier:
     Type: AWS::Lambda::Function
     Properties:
@@ -1019,6 +1028,7 @@ Resources:
                   Subject="Your Metagraph query has completed"
               )
 
+### Step Functions State Machine for orchestrating the query process
   MetagraphStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
@@ -1070,7 +1080,7 @@ Resources:
                       "ContainerOverrides": {
                         "ResourceRequirements": [
                           {"Type": "VCPU", "Value": "1"},
-                          {"Type": "MEMORY", "Value.$": "$.memory_mib"}
+                        {"Type": "MEMORY", "Value.$": "$.memory_mib"}
                         ],
                         "Environment": [
                           { "Name": "TIME",           "Value.$": "$.time" },
@@ -1173,6 +1183,7 @@ Resources:
           }
         }
 
+### Step Functions State Machine for running experiments from Metagraph paper
   MetagraphBatchRunner:
     Type: AWS::StepFunctions::StateMachine
     Properties:
@@ -1251,6 +1262,9 @@ Outputs:
   BucketName:
     Description: 'S3 Bucket for storing queries and their results.'
     Value: !Ref MetagraphBucket
-  StateMachineArn:
-    Description: 'ARN of the Step Functions state machine to trigger queries.'
+  QueryStateMachineArn:
+    Description: 'ARN of the main Metagraph query state machine.'
     Value: !Ref MetagraphStateMachine
+  BatchRunnerStateMachineArn:
+    Description: 'ARN of the Batch Runner (paper experiments) state machine.'
+    Value: !Ref MetagraphBatchRunner
